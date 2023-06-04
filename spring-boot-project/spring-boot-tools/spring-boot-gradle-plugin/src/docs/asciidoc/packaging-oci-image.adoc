@@ -1,8 +1,14 @@
 [[build-image]]
 == Packaging OCI Images
-The plugin can create an https://github.com/opencontainers/image-spec[OCI image] from executable jars using https://buildpacks.io[Cloud Native Buildpacks].
+The plugin can create an https://github.com/opencontainers/image-spec[OCI image] from an executable jar file using https://buildpacks.io[Cloud Native Buildpacks] (CNB).
 Images can be built using the `bootBuildImage` task.
+
+NOTE: For security reasons, images build and run as non-root users.
+See the {buildpacks-reference}/reference/spec/platform-api/#users[CNB specification] for more details.
+
 The task is automatically created when the `java` plugin is applied and is an instance of {boot-build-image-javadoc}[`BootBuildImage`].
+
+NOTE: The `bootBuildImage` task is not supported with projects using <<packaging-executable-wars, war packaging>>.
 
 NOTE: The `bootBuildImage` task can not be used with a <<packaging-executable-configuring-launch-script, fully executable Spring Boot archive>> that includes a launch script.
 Disable launch script configuration in the `bootJar` task when building a jar file that is intended to be used with `bootBuildImage`.
@@ -19,13 +25,13 @@ The following table shows the environment variables and their values:
 |===
 | Environment variable | Description
 
-| DOCKER_HOST 
+| DOCKER_HOST
 | URL containing the host and port for the Docker daemon - e.g. `tcp://192.168.99.100:2376`
 
-| DOCKER_TLS_VERIFY 
+| DOCKER_TLS_VERIFY
 | Enable secure HTTPS protocol when set to `1` (optional)
 
-| DOCKER_CERT_PATH 
+| DOCKER_CERT_PATH
 | Path to certificate and key files for HTTPS (required if `DOCKER_TLS_VERIFY=1`, ignored otherwise)
 |===
 
@@ -59,7 +65,7 @@ The following table summarizes the available properties and their default values
 | `imageName`
 | `--imageName`
 | {spring-boot-api}/buildpack/platform/docker/type/ImageReference.html#of-java.lang.String-[Image name] for the generated image.
-| `docker.io/library/${project.artifactId}:${project.version}`
+| `docker.io/library/${project.name}:${project.version}`
 
 | `environment`
 |
@@ -76,6 +82,10 @@ The following table summarizes the available properties and their default values
 | Enables verbose logging of builder operations.
 | `false`
 |===
+
+NOTE: The plugin detects the target Java compatibility of the project using the JavaPlugin's `targetCompatibility` property.
+When using the default Paketo builder and buildpacks, the plugin instructs the buildpacks to install the same Java version.
+You can override this behaviour as shown in the <<build-image-example-builder-configuration,builder configuration>> examples.
 
 
 
@@ -115,7 +125,7 @@ $ gradle bootBuildImage --builder=mine/java-cnb-builder --runImage=mine/java-cnb
 ==== Builder Configuration
 If the builder exposes configuration options, those can be set using the `environment` property.
 
-The following example assumes that the default builder defines a `BP_JVM_VERSION` property (typically used to customize the JDK version the image should use):
+The following is an example of {paketo-java-reference}/#configuring-the-jvm-version[configuring the JVM version] used by the Paketo Java buildpacks at build time:
 
 [source,groovy,indent=0,subs="verbatim,attributes",role="primary"]
 .Groovy
@@ -130,7 +140,7 @@ include::../gradle/packaging/boot-build-image-env.gradle.kts[tags=env]
 ----
 
 If there is a network proxy between the Docker daemon the builder runs in and network locations that buildpacks download artifacts from, you will need to configure the builder to use the proxy.
-When using the default builder, this can be accomplished by setting the `HTTPS_PROXY` and/or `HTTP_PROXY` environment variables as show in the following example:
+When using the Paketo builder, this can be accomplished by setting the `HTTPS_PROXY` and/or `HTTP_PROXY` environment variables as show in the following example:
 
 [source,groovy,indent=0,subs="verbatim,attributes",role="primary"]
 .Groovy
@@ -146,9 +156,30 @@ include::../gradle/packaging/boot-build-image-env-proxy.gradle.kts[tags=env]
 
 
 
+[[build-image-example-runtime-jvm-configuration]]
+==== Runtime JVM Configuration
+Paketo Java buildpacks {paketo-java-reference}/#runtime-jvm-configuration[configure the JVM runtime environment] by setting the `JAVA_TOOL_OPTIONS` environment variable.
+The buildpack-provided `JAVA_TOOL_OPTIONS` value can be modified to customize JVM runtime behavior when the application image is launched in a container.
+
+Environment variable modifications that should be stored in the image and applied to every deployment can be set as described in the {paketo-reference}/buildpacks/configuration/#environment-variables[Paketo documentation] and shown in the following example:
+
+[source,groovy,indent=0,subs="verbatim,attributes",role="primary"]
+.Groovy
+----
+include::../gradle/packaging/boot-build-image-env-runtime.gradle[tags=env-runtime]
+----
+
+[source,kotlin,indent=0,subs="verbatim,attributes",role="secondary"]
+.Kotlin
+----
+include::../gradle/packaging/boot-build-image-env-runtime.gradle.kts[tags=env-runtime]
+----
+
+
+
 [[build-image-example-custom-image-name]]
 ==== Custom Image Name
-By default, the image name is inferred from the `artifactId` and the `version` of the project, something like `docker.io/library/${project.artifactId}:${project.version}`.
+By default, the image name is inferred from the `name` and the `version` of the project, something like `docker.io/library/${project.name}:${project.version}`.
 You can take control over the name by setting task properties, as shown in the following example:
 
 [source,groovy,indent=0,subs="verbatim,attributes",role="primary"]

@@ -17,8 +17,6 @@ The Spring Boot reference guide is available as:
 
 The latest copy is available at {spring-boot-current-docs}.
 
-Copies of this document may be made for your own use and for distribution to others, provided that you do not charge any fee for such copies and further provided that each copy contains this Copyright Notice, whether distributed in print or electronically.
-
 
 
 [[boot-documentation-getting-help]]
@@ -40,6 +38,18 @@ If you find problems with the docs or if you want to improve them, please {sprin
 
 
 
+[[boot-documentation-upgrading]]
+== Upgrading from an Earlier Version
+Instructions for how to upgrade from earlier versions of Spring Boot are provided on the project {github-wiki}[wiki].
+Follow the links in the in the {github-wiki}#release-notes[release notes] section to find the version that you want to upgrade to.
+
+Upgrading instructions are always the first item in the release notes.
+If you are more than one release behind, please make sure that you also review the release notes of the versions that you jumped.
+
+You should always ensure that you are running a {github-wiki}/Supported-Versions[supported version] of Spring Boot.
+
+
+
 [[boot-documentation-first-steps]]
 == First Steps
 If you are getting started with Spring Boot or 'Spring' in general, start with <<getting-started.adoc#getting-started, the following topics>>:
@@ -50,6 +60,7 @@ If you are getting started with Spring Boot or 'Spring' in general, start with <
 
 
 
+[[boot-documentation-workingwith]]
 == Working with Spring Boot
 Ready to actually start using Spring Boot? <<using-spring-boot.adoc#using-boot, We have you covered>>:
 
@@ -61,6 +72,7 @@ Ready to actually start using Spring Boot? <<using-spring-boot.adoc#using-boot, 
 
 
 
+[[boot-documentation-learning]]
 == Learning about Spring Boot Features
 Need more details about Spring Boot's core features?
 <<spring-boot-features.adoc#boot-features, The following content is for you>>:
@@ -74,6 +86,7 @@ Need more details about Spring Boot's core features?
 
 
 
+[[boot-documentation-production]]
 == Moving to Production
 When you are ready to push your Spring Boot application to production, we have <<production-ready-features.adoc#production-ready, some tricks>> that you might like:
 
@@ -83,6 +96,7 @@ When you are ready to push your Spring Boot application to production, we have <
 
 
 
+[[boot-documentation-advanced]]
 == Advanced Topics
 Finally, we have a few topics for more advanced users:
 

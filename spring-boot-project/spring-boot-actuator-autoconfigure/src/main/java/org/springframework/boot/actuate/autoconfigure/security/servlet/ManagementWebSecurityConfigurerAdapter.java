@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2019 the original author or authors.
+ * Copyright 2012-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.util.ClassUtils;
 
 /**
  * The default configuration for web security when the actuator dependency is on the
@@ -44,6 +45,9 @@ class ManagementWebSecurityConfigurerAdapter extends WebSecurityConfigurerAdapte
 			requests.requestMatchers(EndpointRequest.to(HealthEndpoint.class, InfoEndpoint.class)).permitAll();
 			requests.anyRequest().authenticated();
 		});
+		if (ClassUtils.isPresent("org.springframework.web.servlet.DispatcherServlet", null)) {
+			http.cors();
+		}
 		http.formLogin(Customizer.withDefaults());
 		http.httpBasic(Customizer.withDefaults());
 	}

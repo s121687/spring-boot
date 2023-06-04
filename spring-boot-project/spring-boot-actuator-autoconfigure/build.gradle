@@ -121,6 +121,7 @@ dependencies {
 	testImplementation("org.apache.logging.log4j:log4j-to-slf4j")
 	testImplementation("org.aspectj:aspectjrt")
 	testImplementation("org.assertj:assertj-core")
+	testImplementation("org.awaitility:awaitility")
 	testImplementation("org.eclipse.jetty:jetty-webapp")
 	testImplementation("org.glassfish.jersey.ext:jersey-spring5")
 	testImplementation("org.glassfish.jersey.media:jersey-media-json-jackson")
@@ -140,7 +141,6 @@ dependencies {
 	testImplementation("org.springframework.security:spring-security-test")
 	testImplementation("org.yaml:snakeyaml")
 
-	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 	testRuntimeOnly("org.springframework.security:spring-security-oauth2-jose")
 	testRuntimeOnly("org.springframework.security:spring-security-oauth2-resource-server")
 	testRuntimeOnly("org.springframework.security:spring-security-saml2-service-provider")
@@ -163,11 +163,12 @@ tasks.withType(org.asciidoctor.gradle.jvm.AbstractAsciidoctorTask) {
 		def integrationDocs = String.format("https://docs.spring.io/spring-integration/docs/%s/reference/html/", integrationVersion)
 		attributes "spring-integration-docs": integrationDocs
 	}
+	dependsOn test
+	inputs.dir("${buildDir}/generated-snippets")
 }
 
 asciidoctor {
 	configurations "asciidoctorExtensions"
-	dependsOn test
 	sources {
 		include "index.adoc"
 	}
@@ -175,7 +176,6 @@ asciidoctor {
 
 asciidoctorPdf {
 	configurations "asciidoctorExtensions"
-	dependsOn test
 	sources {
 		include "index.adoc"
 	}

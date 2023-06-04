@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2020 the original author or authors.
+ * Copyright 2012-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,7 +75,7 @@ public class DefaultErrorAttributes implements ErrorAttributes {
 	/**
 	 * Create a new {@link DefaultErrorAttributes} instance.
 	 * @param includeException whether to include the "exception" attribute
-	 * @deprecated since 2.3.0 in favor of
+	 * @deprecated since 2.3.0 for removal in 2.5.0 in favor of
 	 * {@link ErrorAttributeOptions#including(Include...)}
 	 */
 	@Deprecated
@@ -86,7 +86,7 @@ public class DefaultErrorAttributes implements ErrorAttributes {
 	@Override
 	public Map<String, Object> getErrorAttributes(ServerRequest request, ErrorAttributeOptions options) {
 		Map<String, Object> errorAttributes = getErrorAttributes(request, options.isIncluded(Include.STACK_TRACE));
-		if (this.includeException != null) {
+		if (Boolean.TRUE.equals(this.includeException)) {
 			options = options.including(Include.EXCEPTION);
 		}
 		if (!options.isIncluded(Include.EXCEPTION)) {

@@ -21,6 +21,9 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.net.URL;
+import java.util.List;
+import java.util.jar.JarEntry;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,14 +65,14 @@ class JarURLConnectionTests {
 	void connectionToRootUsingAbsoluteUrl() throws Exception {
 		URL url = new URL("jar:" + this.rootJarFile.toURI().toURL() + "!/");
 		Object content = JarURLConnection.get(url, this.jarFile).getContent();
-		assertThat(((JarFile) content).getParent()).isSameAs(this.jarFile);
+		assertThat(JarFileWrapper.unwrap((java.util.jar.JarFile) content)).isSameAs(this.jarFile);
 	}
 
 	@Test
 	void connectionToRootUsingRelativeUrl() throws Exception {
 		URL url = new URL("jar:file:" + getRelativePath() + "!/");
 		Object content = JarURLConnection.get(url, this.jarFile).getContent();
-		assertThat(((JarFile) content).getParent()).isSameAs(this.jarFile);
+		assertThat(JarFileWrapper.unwrap((java.util.jar.JarFile) content)).isSameAs(this.jarFile);
 	}
 
 	@Test
@@ -202,6 +205,14 @@ class JarURLConnectionTests {
 	}
 
 	@Test
+	void entriesCanBeStreamedFromJarFileOfConnection() throws Exception {
+		URL url = new URL("jar:" + this.rootJarFile.toURI().toURL() + "!/");
+		JarURLConnection connection = JarURLConnection.get(url, this.jarFile);
+		List<String> entryNames = connection.getJarFile().stream().map(JarEntry::getName).collect(Collectors.toList());
+		assertThat(entryNames).hasSize(12);
+	}
+
+	@Test
 	void jarEntryBasicName() {
 		assertThat(new JarEntryName(new StringSequence("a/b/C.class")).toString()).isEqualTo("a/b/C.class");
 	}
@@ -226,7 +237,7 @@ class JarURLConnectionTests {
 	void openConnectionCanBeClosedWithoutClosingSourceJar() throws Exception {
 		URL url = new URL("jar:" + this.rootJarFile.toURI().toURL() + "!/");
 		JarURLConnection connection = JarURLConnection.get(url, this.jarFile);
-		JarFile connectionJarFile = connection.getJarFile();
+		java.util.jar.JarFile connectionJarFile = connection.getJarFile();
 		connectionJarFile.close();
 		assertThat(this.jarFile.isClosed()).isFalse();
 	}

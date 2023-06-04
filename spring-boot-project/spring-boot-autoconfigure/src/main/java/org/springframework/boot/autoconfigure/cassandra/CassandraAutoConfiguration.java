@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2020 the original author or authors.
+ * Copyright 2012-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -104,7 +104,7 @@ public class CassandraAutoConfiguration {
 		}
 	}
 
-	@Bean
+	@Bean(destroyMethod = "")
 	@ConditionalOnMissingBean
 	public DriverConfigLoader cassandraDriverConfigLoader(CassandraProperties properties,
 			ObjectProvider<DriverConfigLoaderBuilderCustomizer> builderCustomizers) {
@@ -146,11 +146,11 @@ public class CassandraAutoConfiguration {
 	}
 
 	private void mapPoolingOptions(CassandraProperties properties, CassandraDriverOptions options) {
-		PropertyMapper map = PropertyMapper.get();
+		PropertyMapper map = PropertyMapper.get().alwaysApplyingWhenNonNull();
 		CassandraProperties.Pool poolProperties = properties.getPool();
-		map.from(poolProperties::getIdleTimeout).whenNonNull().asInt(Duration::getSeconds)
+		map.from(poolProperties::getIdleTimeout).asInt(Duration::toMillis)
 				.to((idleTimeout) -> options.add(DefaultDriverOption.HEARTBEAT_TIMEOUT, idleTimeout));
-		map.from(poolProperties::getHeartbeatInterval).whenNonNull().asInt(Duration::getSeconds)
+		map.from(poolProperties::getHeartbeatInterval).asInt(Duration::toMillis)
 				.to((heartBeatInterval) -> options.add(DefaultDriverOption.HEARTBEAT_INTERVAL, heartBeatInterval));
 	}
 

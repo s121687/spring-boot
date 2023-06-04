@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2020 the original author or authors.
+ * Copyright 2012-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package org.springframework.boot.web.reactive.server;
 
-import java.io.File;
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
@@ -116,6 +116,16 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 	}
 
 	@Test
+	void portIsMinusOneWhenConnectionIsClosed() {
+		AbstractReactiveWebServerFactory factory = getFactory();
+		this.webServer = factory.getWebServer(new EchoHandler());
+		this.webServer.start();
+		assertThat(this.webServer.getPort()).isGreaterThan(0);
+		this.webServer.stop();
+		assertThat(this.webServer.getPort()).isEqualTo(-1);
+	}
+
+	@Test
 	void basicSslFromClassPath() {
 		testBasicSslWithKeyStore("classpath:test.jks", "password");
 	}
@@ -131,6 +141,7 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		Ssl ssl = new Ssl();
 		ssl.setKeyStore(keyStore);
 		ssl.setKeyPassword(keyPassword);
+		ssl.setKeyStorePassword("secret");
 		factory.setSsl(ssl);
 		this.webServer = factory.getWebServer(new EchoHandler());
 		this.webServer.start();
@@ -150,6 +161,7 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		AbstractReactiveWebServerFactory factory = getFactory();
 		Ssl ssl = new Ssl();
 		ssl.setKeyStore(keyStore);
+		ssl.setKeyStorePassword("secret");
 		ssl.setKeyPassword(keyPassword);
 		ssl.setKeyAlias("test-alias");
 		factory.setSsl(ssl);
@@ -198,6 +210,7 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		ssl.setClientAuth(Ssl.ClientAuth.WANT);
 		ssl.setKeyStore("classpath:test.jks");
 		ssl.setKeyPassword("password");
+		ssl.setKeyStorePassword("secret");
 		ssl.setTrustStore("classpath:test.jks");
 		testClientAuthSuccess(ssl, buildTrustAllSslWithClientKeyConnector());
 	}
@@ -209,12 +222,15 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		ssl.setKeyStore("classpath:test.jks");
 		ssl.setKeyPassword("password");
 		ssl.setTrustStore("classpath:test.jks");
+		ssl.setKeyStorePassword("secret");
 		testClientAuthSuccess(ssl, buildTrustAllSslConnector());
 	}
 
 	protected ReactorClientHttpConnector buildTrustAllSslWithClientKeyConnector() throws Exception {
 		KeyStore clientKeyStore = KeyStore.getInstance(KeyStore.getDefaultType());
-		clientKeyStore.load(new FileInputStream(new File("src/test/resources/test.jks")), "secret".toCharArray());
+		try (InputStream stream = new FileInputStream("src/test/resources/test.jks")) {
+			clientKeyStore.load(stream, "secret".toCharArray());
+		}
 		KeyManagerFactory clientKeyManagerFactory = KeyManagerFactory
 				.getInstance(KeyManagerFactory.getDefaultAlgorithm());
 		clientKeyManagerFactory.init(clientKeyStore, "password".toCharArray());
@@ -243,6 +259,7 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		Ssl ssl = new Ssl();
 		ssl.setClientAuth(Ssl.ClientAuth.NEED);
 		ssl.setKeyStore("classpath:test.jks");
+		ssl.setKeyStorePassword("secret");
 		ssl.setKeyPassword("password");
 		ssl.setTrustStore("classpath:test.jks");
 		testClientAuthSuccess(ssl, buildTrustAllSslWithClientKeyConnector());
@@ -253,6 +270,7 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		Ssl ssl = new Ssl();
 		ssl.setClientAuth(Ssl.ClientAuth.NEED);
 		ssl.setKeyStore("classpath:test.jks");
+		ssl.setKeyStorePassword("secret");
 		ssl.setKeyPassword("password");
 		ssl.setTrustStore("classpath:test.jks");
 		testClientAuthFailure(ssl, buildTrustAllSslConnector());
@@ -268,7 +286,11 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		Mono<String> result = client.post().uri("/test").contentType(MediaType.TEXT_PLAIN)
 				.body(BodyInserters.fromValue("Hello World")).exchange()
 				.flatMap((response) -> response.bodyToMono(String.class));
-		StepVerifier.create(result).expectError(SSLException.class).verify(Duration.ofSeconds(10));
+		StepVerifier.create(result).expectErrorSatisfies((exception) -> {
+			if (!(exception instanceof SSLException)) {
+				assertThat(exception).hasCauseInstanceOf(SSLException.class);
+			}
+		}).verify(Duration.ofSeconds(10));
 	}
 
 	protected WebClient.Builder getWebClient(int port) {
@@ -411,6 +433,30 @@ public abstract class AbstractReactiveWebServerFactoryTests {
 		}
 		System.out.println("Stopped");
 		Awaitility.await().atMost(Duration.ofSeconds(5))
+				.until(() -> GracefulShutdownResult.REQUESTS_ACTIVE == result.get());
+		blockingHandler.completeOne();
+	}
+
+	@Test
+	void whenARequestIsActiveAfterGracefulShutdownEndsThenStopWillComplete() throws InterruptedException {
+		AbstractReactiveWebServerFactory factory = getFactory();
+		factory.setShutdown(Shutdown.GRACEFUL);
+		BlockingHandler blockingHandler = new BlockingHandler();
+		this.webServer = factory.getWebServer(blockingHandler);
+		this.webServer.start();
+		Mono<ResponseEntity<Void>> request = getWebClient(this.webServer.getPort()).build().get().retrieve()
+				.toBodilessEntity();
+		AtomicReference<ResponseEntity<Void>> responseReference = new AtomicReference<>();
+		CountDownLatch responseLatch = new CountDownLatch(1);
+		request.subscribe((response) -> {
+			responseReference.set(response);
+			responseLatch.countDown();
+		});
+		blockingHandler.awaitQueue();
+		AtomicReference<GracefulShutdownResult> result = new AtomicReference<>();
+		this.webServer.shutDownGracefully(result::set);
+		this.webServer.stop();
+		Awaitility.await().atMost(Duration.ofSeconds(30))
 				.until(() -> GracefulShutdownResult.REQUESTS_ACTIVE == result.get());
 		blockingHandler.completeOne();
 	}

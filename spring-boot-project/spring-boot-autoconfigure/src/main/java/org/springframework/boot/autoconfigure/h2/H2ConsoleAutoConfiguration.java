@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2019 the original author or authors.
+ * Copyright 2012-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 package org.springframework.boot.autoconfigure.h2;
 
 import java.sql.Connection;
-import java.sql.SQLException;
 
 import javax.sql.DataSource;
 
@@ -74,7 +73,7 @@ public class H2ConsoleAutoConfiguration {
 				logger.info("H2 console available at '" + path + "'. Database available at '"
 						+ connection.getMetaData().getURL() + "'");
 			}
-			catch (SQLException ex) {
+			catch (Exception ex) {
 				// Continue
 			}
 		});

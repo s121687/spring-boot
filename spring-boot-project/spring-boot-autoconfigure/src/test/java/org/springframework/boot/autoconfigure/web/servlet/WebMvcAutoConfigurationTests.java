@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2020 the original author or authors.
+ * Copyright 2012-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.validation.ValidatorFactory;
@@ -50,8 +51,11 @@ import org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguratio
 import org.springframework.boot.test.context.assertj.AssertableWebApplicationContext;
 import org.springframework.boot.test.context.runner.ContextConsumer;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
+import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
 import org.springframework.boot.web.server.WebServerFactoryCustomizerBeanPostProcessor;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.boot.web.servlet.ServletRegistrationBean;
+import org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext;
 import org.springframework.boot.web.servlet.filter.OrderedFormContentFilter;
 import org.springframework.boot.web.servlet.server.ServletWebServerFactory;
 import org.springframework.context.ApplicationContext;
@@ -80,10 +84,12 @@ import org.springframework.web.accept.ParameterContentNegotiationStrategy;
 import org.springframework.web.accept.PathExtensionContentNegotiationStrategy;
 import org.springframework.web.bind.support.ConfigurableWebBindingInitializer;
 import org.springframework.web.context.request.ServletWebRequest;
+import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.FormContentFilter;
 import org.springframework.web.filter.HiddenHttpMethodFilter;
 import org.springframework.web.filter.RequestContextFilter;
+import org.springframework.web.servlet.DispatcherServlet;
 import org.springframework.web.servlet.HandlerAdapter;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 import org.springframework.web.servlet.HandlerMapping;
@@ -93,6 +99,7 @@ import org.springframework.web.servlet.ViewResolver;
 import org.springframework.web.servlet.config.annotation.AsyncSupportConfigurer;
 import org.springframework.web.servlet.config.annotation.ContentNegotiationConfigurer;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.handler.AbstractHandlerExceptionResolver;
@@ -100,6 +107,7 @@ import org.springframework.web.servlet.handler.HandlerExceptionResolverComposite
 import org.springframework.web.servlet.handler.SimpleUrlHandlerMapping;
 import org.springframework.web.servlet.i18n.AcceptHeaderLocaleResolver;
 import org.springframework.web.servlet.i18n.FixedLocaleResolver;
+import org.springframework.web.servlet.mvc.method.annotation.ExceptionHandlerExceptionResolver;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver;
@@ -536,16 +544,28 @@ class WebMvcAutoConfigurationTests {
 
 	@Test
 	void customRequestMappingHandlerMapping() {
-		this.contextRunner.withUserConfiguration(CustomRequestMappingHandlerMapping.class)
-				.run((context) -> assertThat(context).getBean(RequestMappingHandlerMapping.class)
-						.isInstanceOf(MyRequestMappingHandlerMapping.class));
+		this.contextRunner.withUserConfiguration(CustomRequestMappingHandlerMapping.class).run((context) -> {
+			assertThat(context).getBean(RequestMappingHandlerMapping.class)
+					.isInstanceOf(MyRequestMappingHandlerMapping.class);
+			assertThat(context.getBean(CustomRequestMappingHandlerMapping.class).handlerMappings).isEqualTo(1);
+		});
 	}
 
 	@Test
 	void customRequestMappingHandlerAdapter() {
-		this.contextRunner.withUserConfiguration(CustomRequestMappingHandlerAdapter.class)
-				.run((context) -> assertThat(context).getBean(RequestMappingHandlerAdapter.class)
-						.isInstanceOf(MyRequestMappingHandlerAdapter.class));
+		this.contextRunner.withUserConfiguration(CustomRequestMappingHandlerAdapter.class).run((context) -> {
+			assertThat(context).getBean(RequestMappingHandlerAdapter.class)
+					.isInstanceOf(MyRequestMappingHandlerAdapter.class);
+			assertThat(context.getBean(CustomRequestMappingHandlerAdapter.class).handlerAdapters).isEqualTo(1);
+		});
+	}
+
+	@Test
+	void customExceptionHandlerExceptionResolver() {
+		this.contextRunner.withUserConfiguration(CustomExceptionHandlerExceptionResolver.class)
+				.run((context) -> assertThat(
+						context.getBean(CustomExceptionHandlerExceptionResolver.class).exceptionResolvers)
+								.isEqualTo(1));
 	}
 
 	@Test
@@ -866,6 +886,42 @@ class WebMvcAutoConfigurationTests {
 		});
 	}
 
+	@Test
+	void urlPathHelperDoesNotUseFullPathWithAdditionalDispatcherServlet() {
+		this.contextRunner.withUserConfiguration(AdditionalDispatcherServletConfiguration.class).run((context) -> {
+			UrlPathHelper urlPathHelper = context.getBean(UrlPathHelper.class);
+			assertThat(urlPathHelper).extracting("alwaysUseFullPath").isEqualTo(false);
+		});
+	}
+
+	@Test
+	void urlPathHelperDoesNotUseFullPathWithAdditionalUntypedDispatcherServlet() {
+		this.contextRunner.withUserConfiguration(AdditionalUntypedDispatcherServletConfiguration.class)
+				.run((context) -> {
+					UrlPathHelper urlPathHelper = context.getBean(UrlPathHelper.class);
+					assertThat(urlPathHelper).extracting("alwaysUseFullPath").isEqualTo(false);
+				});
+	}
+
+	@Test // gh-25743
+	void addResourceHandlersAppliesToChildAndParentContext() {
+		try (AnnotationConfigServletWebServerApplicationContext context = new AnnotationConfigServletWebServerApplicationContext()) {
+			context.register(WebMvcAutoConfiguration.class, DispatcherServletAutoConfiguration.class,
+					HttpMessageConvertersAutoConfiguration.class, PropertyPlaceholderAutoConfiguration.class,
+					ResourceHandlersWithChildAndParentContextConfiguration.class);
+			context.refresh();
+			SimpleUrlHandlerMapping resourceHandlerMapping = context.getBean("resourceHandlerMapping",
+					SimpleUrlHandlerMapping.class);
+			DispatcherServlet extraDispatcherServlet = context.getBean("extraDispatcherServlet",
+					DispatcherServlet.class);
+			SimpleUrlHandlerMapping extraResourceHandlerMapping = extraDispatcherServlet.getWebApplicationContext()
+					.getBean("resourceHandlerMapping", SimpleUrlHandlerMapping.class);
+			assertThat(resourceHandlerMapping).isNotSameAs(extraResourceHandlerMapping);
+			assertThat(resourceHandlerMapping.getUrlMap()).containsKey("/**");
+			assertThat(extraResourceHandlerMapping.getUrlMap()).containsKey("/**");
+		}
+	}
+
 	private void assertCacheControl(AssertableWebApplicationContext context) {
 		Map<String, Object> handlerMap = getHandlerMap(context.getBean("resourceHandlerMapping", HandlerMapping.class));
 		assertThat(handlerMap).hasSize(2);
@@ -881,7 +937,7 @@ class WebMvcAutoConfigurationTests {
 	protected Map<String, List<Resource>> getResourceMappingLocations(ApplicationContext context) {
 		Object bean = context.getBean("resourceHandlerMapping");
 		if (bean instanceof HandlerMapping) {
-			return getMappingLocations(context.getBean("resourceHandlerMapping", HandlerMapping.class));
+			return getMappingLocations((HandlerMapping) bean);
 		}
 		assertThat(bean.toString()).isEqualTo("null");
 		return Collections.emptyMap();
@@ -1025,12 +1081,15 @@ class WebMvcAutoConfigurationTests {
 	@Configuration(proxyBeanMethods = false)
 	static class CustomRequestMappingHandlerMapping {
 
+		private int handlerMappings;
+
 		@Bean
 		WebMvcRegistrations webMvcRegistrationsHandlerMapping() {
 			return new WebMvcRegistrations() {
 
 				@Override
 				public RequestMappingHandlerMapping getRequestMappingHandlerMapping() {
+					CustomRequestMappingHandlerMapping.this.handlerMappings++;
 					return new MyRequestMappingHandlerMapping();
 				}
 
@@ -1046,12 +1105,15 @@ class WebMvcAutoConfigurationTests {
 	@Configuration(proxyBeanMethods = false)
 	static class CustomRequestMappingHandlerAdapter {
 
+		private int handlerAdapters = 0;
+
 		@Bean
 		WebMvcRegistrations webMvcRegistrationsHandlerAdapter() {
 			return new WebMvcRegistrations() {
 
 				@Override
 				public RequestMappingHandlerAdapter getRequestMappingHandlerAdapter() {
+					CustomRequestMappingHandlerAdapter.this.handlerAdapters++;
 					return new MyRequestMappingHandlerAdapter();
 				}
 
@@ -1061,6 +1123,30 @@ class WebMvcAutoConfigurationTests {
 	}
 
 	static class MyRequestMappingHandlerAdapter extends RequestMappingHandlerAdapter {
+
+	}
+
+	@Configuration(proxyBeanMethods = false)
+	static class CustomExceptionHandlerExceptionResolver {
+
+		private int exceptionResolvers = 0;
+
+		@Bean
+		WebMvcRegistrations webMvcRegistrationsExceptionResolver() {
+			return new WebMvcRegistrations() {
+
+				@Override
+				public ExceptionHandlerExceptionResolver getExceptionHandlerExceptionResolver() {
+					CustomExceptionHandlerExceptionResolver.this.exceptionResolvers++;
+					return new MyExceptionHandlerExceptionResolver();
+				}
+
+			};
+		}
+
+	}
+
+	static class MyExceptionHandlerExceptionResolver extends ExceptionHandlerExceptionResolver {
 
 	}
 
@@ -1244,6 +1330,71 @@ class WebMvcAutoConfigurationTests {
 		@Override
 		public void addCorsMappings(CorsRegistry registry) {
 			registry.addMapping("/**").allowedMethods("GET");
+		}
+
+	}
+
+	@Configuration(proxyBeanMethods = false)
+	static class AdditionalDispatcherServletConfiguration {
+
+		@Bean
+		ServletRegistrationBean<DispatcherServlet> additionalDispatcherServlet() {
+			return new ServletRegistrationBean<>(new DispatcherServlet());
+		}
+
+	}
+
+	@Configuration(proxyBeanMethods = false)
+	static class AdditionalUntypedDispatcherServletConfiguration {
+
+		@Bean
+		ServletRegistrationBean<?> additionalDispatcherServlet() {
+			return new ServletRegistrationBean<>(new DispatcherServlet());
+		}
+
+	}
+
+	@Configuration(proxyBeanMethods = false)
+	static class ResourceHandlersWithChildAndParentContextConfiguration {
+
+		@Bean
+		TomcatServletWebServerFactory webServerFactory() {
+			return new TomcatServletWebServerFactory(0);
+		}
+
+		@Bean
+		ServletRegistrationBean<?> additionalDispatcherServlet(DispatcherServlet extraDispatcherServlet) {
+			ServletRegistrationBean<?> registration = new ServletRegistrationBean<>(extraDispatcherServlet, "/extra/*");
+			registration.setName("additionalDispatcherServlet");
+			registration.setLoadOnStartup(1);
+			return registration;
+		}
+
+		@Bean
+		private DispatcherServlet extraDispatcherServlet() throws ServletException {
+			DispatcherServlet dispatcherServlet = new DispatcherServlet();
+			AnnotationConfigWebApplicationContext applicationContext = new AnnotationConfigWebApplicationContext();
+			applicationContext.register(ResourceHandlersWithChildAndParentContextChildConfiguration.class);
+			dispatcherServlet.setApplicationContext(applicationContext);
+			return dispatcherServlet;
+		}
+
+	}
+
+	@Configuration(proxyBeanMethods = false)
+	@EnableWebMvc
+	static class ResourceHandlersWithChildAndParentContextChildConfiguration {
+
+		@Bean
+		WebMvcConfigurer myConfigurer() {
+			return new WebMvcConfigurer() {
+
+				@Override
+				public void addResourceHandlers(ResourceHandlerRegistry registry) {
+					registry.addResourceHandler("/testtesttest");
+				}
+
+			};
 		}
 
 	}

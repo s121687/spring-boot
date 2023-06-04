@@ -49,10 +49,6 @@
       "defaultValue": "never"
     },
     {
-      "name": "server.forward-headers-strategy",
-      "defaultValue": "ncsa"
-    },
-    {
       "name": "server.http2.enabled",
       "description": "Whether to enable HTTP/2 support, if the current environment supports it.",
       "defaultValue": false
@@ -70,6 +66,10 @@
         "replacement": "server.jetty.accesslog.format",
         "level": "error"
       }
+    },
+    {
+      "name": "server.jetty.accesslog.format",
+      "defaultValue": "ncsa"
     },
     {
       "name": "server.jetty.accesslog.locale",
@@ -164,7 +164,7 @@
     },
     {
       "name": "server.servlet.session.cookie.domain",
-      "description": " Domain for the session cookie."
+      "description": "Domain for the session cookie."
     },
     {
       "name": "server.servlet.session.cookie.http-only",
@@ -203,6 +203,10 @@
     {
       "name": "server.servlet.session.tracking-modes",
       "description": "Session tracking modes."
+    },
+    {
+      "name": "server.shutdown",
+      "defaultValue": "immediate"
     },
     {
       "name": "server.ssl.ciphers",
@@ -265,9 +269,6 @@
     {
       "name": "server.ssl.trust-store-type",
       "description": "Type of the trust store."
-    },
-    { "name": "server.shutdown",
-      "defaultValue:": "immediate"
     },
     {
       "name": "server.tomcat.max-http-post-size",
@@ -621,7 +622,7 @@
       "name": "spring.data.jpa.repositories.bootstrap-mode",
       "type": "org.springframework.data.repository.config.BootstrapMode",
       "description": "Bootstrap mode for JPA repositories.",
-      "defaultValue": "deferred"
+      "defaultValue": "default"
     },
     {
       "name": "spring.data.jpa.repositories.enabled",
@@ -685,7 +686,11 @@
       "name": "spring.data.solr.repositories.enabled",
       "type": "java.lang.Boolean",
       "description": "Whether to enable Solr repositories.",
-      "defaultValue": true
+      "defaultValue": true,
+      "deprecation": {
+        "reason": "Spring Data Solr is deprecated.",
+        "level": "warning"
+      }
     },
     {
       "name": "spring.datasource.initialization-mode",
@@ -1249,6 +1254,10 @@
         "replacement": "spring.kafka.admin.ssl.trust-store-password",
         "level": "error"
       }
+    },
+    {
+      "name": "spring.kafka.consumer.isolation-level",
+      "defaultValue": "read-uncommitted"
     },
     {
       "name": "spring.kafka.consumer.ssl.keystore-location",
@@ -1981,7 +1990,7 @@
         },
         {
           "value": "iso",
-          "description": "ISO-8601 extended local time format"
+          "description": "ISO-8601 extended local time format."
         }
       ],
       "providers": [

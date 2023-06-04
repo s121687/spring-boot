@@ -12,6 +12,7 @@ dependencies {
 	api(project(":spring-boot-project:spring-boot"))
 
 	optional("com.fasterxml.jackson.core:jackson-databind")
+	optional("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 	optional("com.github.ben-manes.caffeine:caffeine")
 	optional("com.hazelcast:hazelcast")
 	optional("com.hazelcast:hazelcast-spring")
@@ -86,6 +87,5 @@ dependencies {
 	testRuntimeOnly("javax.xml.bind:jaxb-api")
 	testRuntimeOnly("org.apache.tomcat.embed:tomcat-embed-el")
 	testRuntimeOnly("org.glassfish.jersey.ext:jersey-spring5")
-	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 	testRuntimeOnly("org.hsqldb:hsqldb")
 }

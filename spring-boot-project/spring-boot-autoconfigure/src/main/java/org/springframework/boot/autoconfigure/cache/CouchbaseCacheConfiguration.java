@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2020 the original author or authors.
+ * Copyright 2012-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.util.List;
 
 import com.couchbase.client.java.Cluster;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.cache.CacheProperties.Couchbase;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -39,16 +40,20 @@ import org.springframework.util.ObjectUtils;
  *
  * @author Stephane Nicoll
  * @since 1.4.0
+ * @deprecated since 2.3.3 to be made package-private in 2.5 as this class is not intended
+ * for public use.
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnClass({ Cluster.class, CouchbaseClientFactory.class, CouchbaseCacheManager.class })
 @ConditionalOnMissingBean(CacheManager.class)
 @ConditionalOnSingleCandidate(CouchbaseClientFactory.class)
 @Conditional(CacheCondition.class)
+@Deprecated
 public class CouchbaseCacheConfiguration {
 
 	@Bean
 	public CouchbaseCacheManager cacheManager(CacheProperties cacheProperties, CacheManagerCustomizers customizers,
+			ObjectProvider<CouchbaseCacheManagerBuilderCustomizer> couchbaseCacheManagerBuilderCustomizers,
 			CouchbaseClientFactory clientFactory) {
 		List<String> cacheNames = cacheProperties.getCacheNames();
 		CouchbaseCacheManagerBuilder builder = CouchbaseCacheManager.builder(clientFactory);
@@ -62,6 +67,7 @@ public class CouchbaseCacheConfiguration {
 		if (!ObjectUtils.isEmpty(cacheNames)) {
 			builder.initialCacheNames(new LinkedHashSet<>(cacheNames));
 		}
+		couchbaseCacheManagerBuilderCustomizers.orderedStream().forEach((customizer) -> customizer.customize(builder));
 		CouchbaseCacheManager cacheManager = builder.build();
 		return customizers.customize(cacheManager);
 	}

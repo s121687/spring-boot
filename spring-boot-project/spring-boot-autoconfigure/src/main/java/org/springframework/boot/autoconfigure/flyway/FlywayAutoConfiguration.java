@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2020 the original author or authors.
+ * Copyright 2012-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.springframework.boot.autoconfigure.flyway;
 
+import java.sql.DatabaseMetaData;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -32,6 +33,7 @@ import org.flywaydb.core.api.MigrationVersion;
 import org.flywaydb.core.api.callback.Callback;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.flywaydb.core.api.migration.JavaMigration;
+import org.jooq.DSLContext;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
@@ -43,6 +45,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.data.jpa.EntityManagerFactoryDependsOnPostProcessor;
 import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration.FlywayDataSourceCondition;
+import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration.FlywayDslContextDependsOnPostProcessor;
 import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration.FlywayEntityManagerFactoryDependsOnPostProcessor;
 import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration.FlywayJdbcOperationsDependsOnPostProcessor;
 import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration.FlywayNamedParameterJdbcOperationsDependencyConfiguration;
@@ -51,6 +54,7 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.boot.autoconfigure.jdbc.JdbcOperationsDependsOnPostProcessor;
 import org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.NamedParameterJdbcOperationsDependsOnPostProcessor;
+import org.springframework.boot.autoconfigure.jooq.DslContextDependsOnPostProcessor;
 import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
 import org.springframework.boot.context.properties.ConfigurationPropertiesBinding;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -95,7 +99,7 @@ import org.springframework.util.StringUtils;
 @AutoConfigureAfter({ DataSourceAutoConfiguration.class, JdbcTemplateAutoConfiguration.class,
 		HibernateJpaAutoConfiguration.class })
 @Import({ FlywayEntityManagerFactoryDependsOnPostProcessor.class, FlywayJdbcOperationsDependsOnPostProcessor.class,
-		FlywayNamedParameterJdbcOperationsDependencyConfiguration.class })
+		FlywayNamedParameterJdbcOperationsDependencyConfiguration.class, FlywayDslContextDependsOnPostProcessor.class })
 public class FlywayAutoConfiguration {
 
 	@Bean
@@ -114,7 +118,8 @@ public class FlywayAutoConfiguration {
 	@EnableConfigurationProperties({ DataSourceProperties.class, FlywayProperties.class })
 	@Import({ FlywayMigrationInitializerEntityManagerFactoryDependsOnPostProcessor.class,
 			FlywayMigrationInitializerJdbcOperationsDependsOnPostProcessor.class,
-			FlywayMigrationInitializerNamedParameterJdbcOperationsDependsOnPostProcessor.class })
+			FlywayMigrationInitializerNamedParameterJdbcOperationsDependsOnPostProcessor.class,
+			FlywayMigrationInitializerDslContextDependsOnPostProcessor.class })
 	public static class FlywayConfiguration {
 
 		@Bean
@@ -144,10 +149,6 @@ public class FlywayAutoConfiguration {
 				String user = getProperty(properties::getUser, dataSourceProperties::determineUsername);
 				String password = getProperty(properties::getPassword, dataSourceProperties::determinePassword);
 				configuration.dataSource(url, user, password);
-				if (!CollectionUtils.isEmpty(properties.getInitSqls())) {
-					String initSql = StringUtils.collectionToDelimitedString(properties.getInitSqls(), "\n");
-					configuration.initSql(initSql);
-				}
 			}
 			else if (flywayDataSource != null) {
 				configuration.dataSource(flywayDataSource);
@@ -208,6 +209,9 @@ public class FlywayAutoConfiguration {
 			map.from(properties.isSkipDefaultResolvers()).to(configuration::skipDefaultResolvers);
 			configureValidateMigrationNaming(configuration, properties.isValidateMigrationNaming());
 			map.from(properties.isValidateOnMigrate()).to(configuration::validateOnMigrate);
+			map.from(properties.getInitSqls()).whenNot(CollectionUtils::isEmpty)
+					.as((initSqls) -> StringUtils.collectionToDelimitedString(initSqls, "\n"))
+					.to(configuration::initSql);
 			// Pro properties
 			map.from(properties.getBatch()).whenNonNull().to(configuration::batch);
 			map.from(properties.getDryRunOutput()).whenNonNull().to(configuration::dryRunOutput);
@@ -327,6 +331,20 @@ public class FlywayAutoConfiguration {
 	}
 
 	/**
+	 * Post processor to ensure that {@link DSLContext} beans depend on any
+	 * {@link FlywayMigrationInitializer} beans.
+	 */
+	@ConditionalOnClass(DSLContext.class)
+	@ConditionalOnBean(DSLContext.class)
+	static class FlywayMigrationInitializerDslContextDependsOnPostProcessor extends DslContextDependsOnPostProcessor {
+
+		FlywayMigrationInitializerDslContextDependsOnPostProcessor() {
+			super(FlywayMigrationInitializer.class);
+		}
+
+	}
+
+	/**
 	 * Post processor to ensure that {@link EntityManagerFactory} beans depend on any
 	 * {@link Flyway} beans.
 	 */
@@ -369,6 +387,20 @@ public class FlywayAutoConfiguration {
 
 	}
 
+	/**
+	 * Post processor to ensure that {@link DSLContext} beans depend on any {@link Flyway}
+	 * beans.
+	 */
+	@ConditionalOnClass(DSLContext.class)
+	@ConditionalOnBean(DSLContext.class)
+	protected static class FlywayDslContextDependsOnPostProcessor extends DslContextDependsOnPostProcessor {
+
+		public FlywayDslContextDependsOnPostProcessor() {
+			super(Flyway.class);
+		}
+
+	}
+
 	private static class LocationResolver {
 
 		private static final String VENDOR_PLACEHOLDER = "{vendor}";
@@ -398,7 +430,7 @@ public class FlywayAutoConfiguration {
 
 		private DatabaseDriver getDatabaseDriver() {
 			try {
-				String url = JdbcUtils.extractDatabaseMetaData(this.dataSource, "getURL");
+				String url = JdbcUtils.extractDatabaseMetaData(this.dataSource, DatabaseMetaData::getURL);
 				return DatabaseDriver.fromJdbcUrl(url);
 			}
 			catch (MetaDataAccessException ex) {

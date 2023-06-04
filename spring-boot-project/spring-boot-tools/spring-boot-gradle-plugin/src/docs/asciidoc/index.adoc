@@ -4,12 +4,13 @@ Andy Wilkinson, Scott Frederick
 :toc: left
 :toclevels: 4
 :numbered:
+:sectanchors:
 :icons: font
 :hide-uri-scheme:
 :docinfo: shared,private
 
 :dependency-management-plugin: https://github.com/spring-gradle-plugins/dependency-management-plugin
-:dependency-management-plugin-documentation: {dependency-management-plugin}/blob/master/README.md
+:dependency-management-plugin-documentation: https://docs.spring.io/dependency-management-plugin/docs/current/reference/html/
 :gradle-userguide: https://docs.gradle.org/current/userguide
 :gradle-dsl: https://docs.gradle.org/current/dsl
 :gradle-api: https://docs.gradle.org/current/javadoc
@@ -33,6 +34,8 @@ Andy Wilkinson, Scott Frederick
 :boot-run-javadoc: {api-documentation}/org/springframework/boot/gradle/tasks/run/BootRun.html
 :github-code: https://github.com/spring-projects/spring-boot/tree/{github-tag}
 :buildpacks-reference: https://buildpacks.io/docs
+:paketo-reference: https://paketo.io/docs
+:paketo-java-reference: {paketo-reference}/buildpacks/language-family-buildpacks/java
 
 
 [[introduction]]

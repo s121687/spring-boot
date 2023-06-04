@@ -50,6 +50,7 @@ import org.springframework.boot.buildpack.platform.io.TarArchive;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -172,6 +173,16 @@ class DockerApiTests {
 					.withMessage("Listener must not be null");
 		}
 
+		@Test // gh-23130
+		void loadWithEmptyResponseThrowsException() throws Exception {
+			Image image = Image.of(getClass().getResourceAsStream("type/image.json"));
+			ImageArchive archive = ImageArchive.from(image);
+			URI loadUri = new URI(IMAGES_URL + "/load");
+			given(http().post(eq(loadUri), eq("application/x-tar"), any())).willReturn(emptyResponse());
+			assertThatIllegalStateException().isThrownBy(() -> this.api.load(archive, this.loadListener))
+					.withMessageContaining("Invalid response received");
+		}
+
 		@Test
 		void loadLoadsImage() throws Exception {
 			Image image = Image.of(getClass().getResourceAsStream("type/image.json"));
@@ -251,10 +262,10 @@ class DockerApiTests {
 					.willReturn(responseOf("create-container-response.json"));
 			ContainerReference containerReference = this.api.create(config);
 			assertThat(containerReference.toString()).isEqualTo("e90e34656806");
-			ByteArrayOutputStream out = new ByteArrayOutputStream();
 			verify(http()).post(any(), any(), this.writer.capture());
+			ByteArrayOutputStream out = new ByteArrayOutputStream();
 			this.writer.getValue().accept(out);
-			assertThat(out.toByteArray()).hasSizeGreaterThan(130);
+			assertThat(out.toByteArray().length).isEqualTo(config.toString().length());
 		}
 
 		@Test
@@ -273,10 +284,10 @@ class DockerApiTests {
 			given(http().put(eq(uploadUri), eq("application/x-tar"), any())).willReturn(emptyResponse());
 			ContainerReference containerReference = this.api.create(config, content);
 			assertThat(containerReference.toString()).isEqualTo("e90e34656806");
-			ByteArrayOutputStream out = new ByteArrayOutputStream();
 			verify(http()).post(any(), any(), this.writer.capture());
+			ByteArrayOutputStream out = new ByteArrayOutputStream();
 			this.writer.getValue().accept(out);
-			assertThat(out.toByteArray()).hasSizeGreaterThan(130);
+			assertThat(out.toByteArray().length).isEqualTo(config.toString().length());
 			verify(http()).put(any(), any(), this.writer.capture());
 			this.writer.getValue().accept(out);
 			assertThat(out.toByteArray()).hasSizeGreaterThan(2000);

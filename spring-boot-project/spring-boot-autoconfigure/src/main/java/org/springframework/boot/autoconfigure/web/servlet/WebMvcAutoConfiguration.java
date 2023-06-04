@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2020 the original author or authors.
+ * Copyright 2012-2021 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,13 @@
 package org.springframework.boot.autoconfigure.web.servlet;
 
 import java.time.Duration;
-import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
-import java.util.Optional;
 
 import javax.servlet.Servlet;
+import javax.servlet.ServletContext;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -53,9 +53,11 @@ import org.springframework.boot.autoconfigure.web.ResourceProperties;
 import org.springframework.boot.autoconfigure.web.ResourceProperties.Strategy;
 import org.springframework.boot.autoconfigure.web.format.DateTimeFormatters;
 import org.springframework.boot.autoconfigure.web.format.WebConversionService;
+import org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration.AutoConfigurationResourceHandlerRegistry.RegistrationType;
 import org.springframework.boot.autoconfigure.web.servlet.WebMvcProperties.Format;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.convert.ApplicationConversionService;
+import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.boot.web.servlet.filter.OrderedFormContentFilter;
 import org.springframework.boot.web.servlet.filter.OrderedHiddenHttpMethodFilter;
 import org.springframework.boot.web.servlet.filter.OrderedRequestContextFilter;
@@ -72,10 +74,11 @@ import org.springframework.core.io.ResourceLoader;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.format.FormatterRegistry;
 import org.springframework.format.support.FormattingConversionService;
-import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
+import org.springframework.util.PathMatcher;
 import org.springframework.validation.DefaultMessageCodesResolver;
 import org.springframework.validation.MessageCodesResolver;
 import org.springframework.validation.Validator;
@@ -87,11 +90,13 @@ import org.springframework.web.bind.support.ConfigurableWebBindingInitializer;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextListener;
+import org.springframework.web.context.support.ServletContextResource;
 import org.springframework.web.filter.FormContentFilter;
 import org.springframework.web.filter.HiddenHttpMethodFilter;
 import org.springframework.web.filter.RequestContextFilter;
 import org.springframework.web.servlet.DispatcherServlet;
 import org.springframework.web.servlet.HandlerExceptionResolver;
+import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.LocaleResolver;
 import org.springframework.web.servlet.View;
 import org.springframework.web.servlet.ViewResolver;
@@ -106,6 +111,8 @@ import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurationSupport;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.handler.AbstractHandlerExceptionResolver;
+import org.springframework.web.servlet.handler.AbstractHandlerMapping;
+import org.springframework.web.servlet.handler.SimpleUrlHandlerMapping;
 import org.springframework.web.servlet.i18n.AcceptHeaderLocaleResolver;
 import org.springframework.web.servlet.i18n.FixedLocaleResolver;
 import org.springframework.web.servlet.mvc.method.annotation.ExceptionHandlerExceptionResolver;
@@ -113,6 +120,7 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.springframework.web.servlet.resource.AppCacheManifestTransformer;
 import org.springframework.web.servlet.resource.EncodedResourceResolver;
+import org.springframework.web.servlet.resource.ResourceHttpRequestHandler;
 import org.springframework.web.servlet.resource.ResourceResolver;
 import org.springframework.web.servlet.resource.ResourceUrlProvider;
 import org.springframework.web.servlet.resource.VersionResourceResolver;
@@ -144,11 +152,17 @@ import org.springframework.web.util.UrlPathHelper;
 		ValidationAutoConfiguration.class })
 public class WebMvcAutoConfiguration {
 
+	/**
+	 * The default Spring MVC view prefix.
+	 */
 	public static final String DEFAULT_PREFIX = "";
 
+	/**
+	 * The default Spring MVC view suffix.
+	 */
 	public static final String DEFAULT_SUFFIX = "";
 
-	private static final String[] SERVLET_LOCATIONS = { "/" };
+	private static final String SERVLET_LOCATION = "/";
 
 	@Bean
 	@ConditionalOnMissingBean(HiddenHttpMethodFilter.class)
@@ -162,13 +176,6 @@ public class WebMvcAutoConfiguration {
 	@ConditionalOnProperty(prefix = "spring.mvc.formcontent.filter", name = "enabled", matchIfMissing = true)
 	public OrderedFormContentFilter formContentFilter() {
 		return new OrderedFormContentFilter();
-	}
-
-	static String[] getResourceLocations(String[] staticLocations) {
-		String[] locations = new String[staticLocations.length + SERVLET_LOCATIONS.length];
-		System.arraycopy(staticLocations, 0, locations, 0, staticLocations.length);
-		System.arraycopy(SERVLET_LOCATIONS, 0, locations, staticLocations.length, SERVLET_LOCATIONS.length);
-		return locations;
 	}
 
 	// Defined as a nested config to ensure WebMvcConfigurer is not read when not
@@ -191,18 +198,22 @@ public class WebMvcAutoConfiguration {
 
 		private final ObjectProvider<DispatcherServletPath> dispatcherServletPath;
 
-		final ResourceHandlerRegistrationCustomizer resourceHandlerRegistrationCustomizer;
+		private final ObjectProvider<ServletRegistrationBean<?>> servletRegistrations;
+
+		private final ResourceHandlerRegistrationCustomizer resourceHandlerRegistrationCustomizer;
 
 		public WebMvcAutoConfigurationAdapter(ResourceProperties resourceProperties, WebMvcProperties mvcProperties,
 				ListableBeanFactory beanFactory, ObjectProvider<HttpMessageConverters> messageConvertersProvider,
 				ObjectProvider<ResourceHandlerRegistrationCustomizer> resourceHandlerRegistrationCustomizerProvider,
-				ObjectProvider<DispatcherServletPath> dispatcherServletPath) {
+				ObjectProvider<DispatcherServletPath> dispatcherServletPath,
+				ObjectProvider<ServletRegistrationBean<?>> servletRegistrations) {
 			this.resourceProperties = resourceProperties;
 			this.mvcProperties = mvcProperties;
 			this.beanFactory = beanFactory;
 			this.messageConvertersProvider = messageConvertersProvider;
 			this.resourceHandlerRegistrationCustomizer = resourceHandlerRegistrationCustomizerProvider.getIfAvailable();
 			this.dispatcherServletPath = dispatcherServletPath;
+			this.servletRegistrations = servletRegistrations;
 		}
 
 		@Override
@@ -234,12 +245,17 @@ public class WebMvcAutoConfiguration {
 					this.mvcProperties.getPathmatch().isUseRegisteredSuffixPattern());
 			this.dispatcherServletPath.ifAvailable((dispatcherPath) -> {
 				String servletUrlMapping = dispatcherPath.getServletUrlMapping();
-				if (servletUrlMapping.equals("/")) {
+				if (servletUrlMapping.equals("/") && singleDispatcherServlet()) {
 					UrlPathHelper urlPathHelper = new UrlPathHelper();
 					urlPathHelper.setAlwaysUseFullPath(true);
 					configurer.setUrlPathHelper(urlPathHelper);
 				}
 			});
+		}
+
+		private boolean singleDispatcherServlet() {
+			return this.servletRegistrations.stream().map(ServletRegistrationBean::getServlet)
+					.filter(DispatcherServlet.class::isInstance).count() == 1;
 		}
 
 		@Override
@@ -318,19 +334,21 @@ public class WebMvcAutoConfiguration {
 				logger.debug("Default resource handling disabled");
 				return;
 			}
-			Duration cachePeriod = this.resourceProperties.getCache().getPeriod();
-			CacheControl cacheControl = this.resourceProperties.getCache().getCachecontrol().toHttpCacheControl();
-			if (!registry.hasMappingForPattern("/webjars/**")) {
-				customizeResourceHandlerRegistration(registry.addResourceHandler("/webjars/**")
-						.addResourceLocations("classpath:/META-INF/resources/webjars/")
-						.setCachePeriod(getSeconds(cachePeriod)).setCacheControl(cacheControl));
+			addResourceHandler(registry, "/webjars/**", "classpath:/META-INF/resources/webjars/");
+			addResourceHandler(registry, this.mvcProperties.getStaticPathPattern(),
+					this.resourceProperties.getStaticLocations());
+		}
+
+		private void addResourceHandler(ResourceHandlerRegistry registry, String pattern, String... locations) {
+			if (registry.hasMappingForPattern(pattern)) {
+				return;
 			}
-			String staticPathPattern = this.mvcProperties.getStaticPathPattern();
-			if (!registry.hasMappingForPattern(staticPathPattern)) {
-				customizeResourceHandlerRegistration(registry.addResourceHandler(staticPathPattern)
-						.addResourceLocations(getResourceLocations(this.resourceProperties.getStaticLocations()))
-						.setCachePeriod(getSeconds(cachePeriod)).setCacheControl(cacheControl));
-			}
+			ResourceHandlerRegistration registration = AutoConfigurationResourceHandlerRegistry
+					.addResourceHandler(registry, RegistrationType.AUTO_CONFIGURATION, pattern);
+			registration.addResourceLocations(locations);
+			registration.setCachePeriod(getSeconds(this.resourceProperties.getCache().getPeriod()));
+			registration.setCacheControl(this.resourceProperties.getCache().getCachecontrol().toHttpCacheControl());
+			customizeResourceHandlerRegistration(registration);
 		}
 
 		private Integer getSeconds(Duration cachePeriod) {
@@ -362,11 +380,11 @@ public class WebMvcAutoConfiguration {
 
 		private final WebMvcProperties mvcProperties;
 
-		private final ListableBeanFactory beanFactory;
-
 		private final WebMvcRegistrations mvcRegistrations;
 
 		private ResourceLoader resourceLoader;
+
+		private final ListableBeanFactory beanFactory;
 
 		public EnableWebMvcConfiguration(ResourceProperties resourceProperties,
 				ObjectProvider<WebMvcProperties> mvcPropertiesProvider,
@@ -392,8 +410,11 @@ public class WebMvcAutoConfiguration {
 
 		@Override
 		protected RequestMappingHandlerAdapter createRequestMappingHandlerAdapter() {
-			if (this.mvcRegistrations != null && this.mvcRegistrations.getRequestMappingHandlerAdapter() != null) {
-				return this.mvcRegistrations.getRequestMappingHandlerAdapter();
+			if (this.mvcRegistrations != null) {
+				RequestMappingHandlerAdapter adapter = this.mvcRegistrations.getRequestMappingHandlerAdapter();
+				if (adapter != null) {
+					return adapter;
+				}
 			}
 			return super.createRequestMappingHandlerAdapter();
 		}
@@ -411,6 +432,30 @@ public class WebMvcAutoConfiguration {
 		}
 
 		@Bean
+		@Override
+		public HandlerMapping resourceHandlerMapping(@Qualifier("mvcUrlPathHelper") UrlPathHelper urlPathHelper,
+				@Qualifier("mvcPathMatcher") PathMatcher pathMatcher,
+				@Qualifier("mvcContentNegotiationManager") ContentNegotiationManager contentNegotiationManager,
+				@Qualifier("mvcConversionService") FormattingConversionService conversionService,
+				@Qualifier("mvcResourceUrlProvider") ResourceUrlProvider resourceUrlProvider) {
+			Assert.state(getApplicationContext() != null, "No ApplicationContext set");
+			Assert.state(getServletContext() != null, "No ServletContext set");
+			AutoConfigurationResourceHandlerRegistry registry = new AutoConfigurationResourceHandlerRegistry(
+					getApplicationContext(), getServletContext(), contentNegotiationManager, urlPathHelper,
+					this.mvcProperties);
+			addResourceHandlers(registry);
+			AbstractHandlerMapping mapping = registry.getHandlerMapping();
+			if (mapping == null) {
+				return null;
+			}
+			mapping.setPathMatcher(pathMatcher);
+			mapping.setUrlPathHelper(urlPathHelper);
+			mapping.setInterceptors(getInterceptors(conversionService, resourceUrlProvider));
+			mapping.setCorsConfigurations(getCorsConfigurations());
+			return mapping;
+		}
+
+		@Bean
 		public WelcomePageHandlerMapping welcomePageHandlerMapping(ApplicationContext applicationContext,
 				FormattingConversionService mvcConversionService, ResourceUrlProvider mvcResourceUrlProvider) {
 			WelcomePageHandlerMapping welcomePageHandlerMapping = new WelcomePageHandlerMapping(
@@ -421,22 +466,34 @@ public class WebMvcAutoConfiguration {
 			return welcomePageHandlerMapping;
 		}
 
-		private Optional<Resource> getWelcomePage() {
-			String[] locations = getResourceLocations(this.resourceProperties.getStaticLocations());
-			return Arrays.stream(locations).map(this::getIndexHtml).filter(this::isReadable).findFirst();
+		private Resource getWelcomePage() {
+			for (String location : this.resourceProperties.getStaticLocations()) {
+				Resource indexHtml = getIndexHtml(location);
+				if (indexHtml != null) {
+					return indexHtml;
+				}
+			}
+			ServletContext servletContext = getServletContext();
+			if (servletContext != null) {
+				return getIndexHtml(new ServletContextResource(servletContext, SERVLET_LOCATION));
+			}
+			return null;
 		}
 
 		private Resource getIndexHtml(String location) {
-			return this.resourceLoader.getResource(location + "index.html");
+			return getIndexHtml(this.resourceLoader.getResource(location));
 		}
 
-		private boolean isReadable(Resource resource) {
+		private Resource getIndexHtml(Resource location) {
 			try {
-				return resource.exists() && (resource.getURL() != null);
+				Resource resource = location.createRelative("index.html");
+				if (resource.exists() && (resource.getURL() != null)) {
+					return resource;
+				}
 			}
 			catch (Exception ex) {
-				return false;
 			}
+			return null;
 		}
 
 		@Bean
@@ -460,8 +517,11 @@ public class WebMvcAutoConfiguration {
 
 		@Override
 		protected RequestMappingHandlerMapping createRequestMappingHandlerMapping() {
-			if (this.mvcRegistrations != null && this.mvcRegistrations.getRequestMappingHandlerMapping() != null) {
-				return this.mvcRegistrations.getRequestMappingHandlerMapping();
+			if (this.mvcRegistrations != null) {
+				RequestMappingHandlerMapping mapping = this.mvcRegistrations.getRequestMappingHandlerMapping();
+				if (mapping != null) {
+					return mapping;
+				}
 			}
 			return super.createRequestMappingHandlerMapping();
 		}
@@ -479,8 +539,12 @@ public class WebMvcAutoConfiguration {
 
 		@Override
 		protected ExceptionHandlerExceptionResolver createExceptionHandlerExceptionResolver() {
-			if (this.mvcRegistrations != null && this.mvcRegistrations.getExceptionHandlerExceptionResolver() != null) {
-				return this.mvcRegistrations.getExceptionHandlerExceptionResolver();
+			if (this.mvcRegistrations != null) {
+				ExceptionHandlerExceptionResolver resolver = this.mvcRegistrations
+						.getExceptionHandlerExceptionResolver();
+				if (resolver != null) {
+					return resolver;
+				}
 			}
 			return super.createExceptionHandlerExceptionResolver();
 		}
@@ -598,6 +662,86 @@ public class WebMvcAutoConfiguration {
 				return MEDIA_TYPE_ALL_LIST;
 			}
 			return this.delegate.resolveMediaTypes(webRequest);
+		}
+
+	}
+
+	/**
+	 * {@link ResourceHandlerRegistry} that tracks auto-configuration and when appropriate
+	 * adds the {@link ServletContextResource} for {@code /}.
+	 */
+	static class AutoConfigurationResourceHandlerRegistry
+			extends org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry {
+
+		private final ServletContext servletContext;
+
+		private final WebMvcProperties mvcProperties;
+
+		private final Map<String, RegistrationType> registrations = new LinkedHashMap<>();
+
+		AutoConfigurationResourceHandlerRegistry(ApplicationContext applicationContext, ServletContext servletContext,
+				ContentNegotiationManager contentNegotiationManager, UrlPathHelper pathHelper,
+				WebMvcProperties mvcProperties) {
+			super(applicationContext, servletContext, contentNegotiationManager, pathHelper);
+			this.servletContext = servletContext;
+			this.mvcProperties = mvcProperties;
+		}
+
+		@Override
+		public ResourceHandlerRegistration addResourceHandler(String... pathPatterns) {
+			return addResourceHandler(RegistrationType.STANDARD, pathPatterns);
+		}
+
+		ResourceHandlerRegistration addResourceHandler(RegistrationType type, String... pathPatterns) {
+			for (String pathPattern : pathPatterns) {
+				this.registrations.put(pathPattern, type);
+			}
+			return super.addResourceHandler(pathPatterns);
+		}
+
+		@Override
+		protected AbstractHandlerMapping getHandlerMapping() {
+			SimpleUrlHandlerMapping mapping = (SimpleUrlHandlerMapping) super.getHandlerMapping();
+			reconfigure(mapping);
+			return mapping;
+		}
+
+		private void reconfigure(SimpleUrlHandlerMapping mapping) {
+			String staticPathPattern = this.mvcProperties.getStaticPathPattern();
+			if (this.registrations.get(staticPathPattern) == RegistrationType.AUTO_CONFIGURATION) {
+				addServletContextResourceHandlerMapping(mapping, staticPathPattern);
+			}
+		}
+
+		private void addServletContextResourceHandlerMapping(SimpleUrlHandlerMapping mapping,
+				String staticPathPattern) {
+			Object handler = mapping.getUrlMap().get(staticPathPattern);
+			if (handler instanceof ResourceHttpRequestHandler) {
+				addServletContextResourceHandlerMapping((ResourceHttpRequestHandler) handler);
+			}
+		}
+
+		private void addServletContextResourceHandlerMapping(ResourceHttpRequestHandler handler) {
+			if (this.servletContext != null) {
+				List<Resource> locations = handler.getLocations();
+				locations.add(new ServletContextResource(this.servletContext, SERVLET_LOCATION));
+			}
+		}
+
+		static ResourceHandlerRegistration addResourceHandler(ResourceHandlerRegistry registry, RegistrationType type,
+				String... pathPatterns) {
+			if (registry instanceof AutoConfigurationResourceHandlerRegistry) {
+				return ((AutoConfigurationResourceHandlerRegistry) registry).addResourceHandler(type, pathPatterns);
+			}
+			return registry.addResourceHandler(pathPatterns);
+		}
+
+		enum RegistrationType {
+
+			STANDARD,
+
+			AUTO_CONFIGURATION
+
 		}
 
 	}

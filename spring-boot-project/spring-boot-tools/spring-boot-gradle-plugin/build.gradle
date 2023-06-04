@@ -64,6 +64,7 @@ task preparePluginValidationClasses(type: Copy) {
 
 validatePlugins {
 	classes.setFrom preparePluginValidationClasses
+	enableStricterValidation = true
 }
 
 task dependencyVersions(type: org.springframework.boot.build.constraints.ExtractVersionConstraints) {
@@ -72,6 +73,7 @@ task dependencyVersions(type: org.springframework.boot.build.constraints.Extract
 
 tasks.withType(org.asciidoctor.gradle.jvm.AbstractAsciidoctorTask) {
 	dependsOn dependencyVersions
+	inputs.dir('src/docs/gradle').withPathSensitivity(PathSensitivity.RELATIVE)
 	doFirst {
 		attributes "dependency-management-plugin-version": dependencyVersions.versionConstraints["io.spring.gradle:dependency-management-plugin"]
 	}

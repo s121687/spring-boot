@@ -18,6 +18,8 @@ package org.springframework.boot.context.config;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -108,6 +110,7 @@ import org.springframework.util.StringUtils;
  * @author Andy Wilkinson
  * @author Eddú Meléndez
  * @author Madhura Bhave
+ * @author Scott Frederick
  * @since 1.0.0
  */
 public class ConfigFileApplicationListener implements EnvironmentPostProcessor, SmartApplicationListener, Ordered {
@@ -519,6 +522,14 @@ public class ConfigFileApplicationListener implements EnvironmentPostProcessor, 
 						}
 						continue;
 					}
+					if (resource.isFile() && isPatternLocation(location) && hasHiddenPathElement(resource)) {
+						if (this.logger.isTraceEnabled()) {
+							StringBuilder description = getDescription("Skipped location with hidden path element ",
+									location, resource, profile);
+							this.logger.trace(description);
+						}
+						continue;
+					}
 					String name = "applicationConfig: [" + getLocationName(location, resource) + "]";
 					List<Document> documents = loadDocuments(loader, name, resource);
 					if (CollectionUtils.isEmpty(documents)) {
@@ -555,6 +566,16 @@ public class ConfigFileApplicationListener implements EnvironmentPostProcessor, 
 			}
 		}
 
+		private boolean hasHiddenPathElement(Resource resource) throws IOException {
+			String cleanPath = StringUtils.cleanPath(resource.getFile().getAbsolutePath());
+			for (Path value : Paths.get(cleanPath)) {
+				if (value.toString().startsWith("..")) {
+					return true;
+				}
+			}
+			return false;
+		}
+
 		private String getLocationName(String location, Resource resource) {
 			if (!location.contains("*")) {
 				return location;
@@ -567,7 +588,7 @@ public class ConfigFileApplicationListener implements EnvironmentPostProcessor, 
 
 		private Resource[] getResources(String location) {
 			try {
-				if (location.contains("*")) {
+				if (isPatternLocation(location)) {
 					return getResourcesFromPatternLocation(location);
 				}
 				return new Resource[] { this.resourceLoader.getResource(location) };
@@ -575,6 +596,10 @@ public class ConfigFileApplicationListener implements EnvironmentPostProcessor, 
 			catch (Exception ex) {
 				return EMPTY_RESOURCES;
 			}
+		}
+
+		private boolean isPatternLocation(String location) {
+			return location.contains("*");
 		}
 
 		private Resource[] getResourcesFromPatternLocation(String location) throws IOException {
